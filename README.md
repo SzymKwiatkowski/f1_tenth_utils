@@ -1,0 +1,1 @@
+# Waypoints publisher to publish goal that needs to be reached at the moment

@@ -9,7 +9,8 @@ class WaypointsPublisher(Node):
     def __init__(self):
         super().__init__('WaypointsPublisher')
         self.publisher_ = self.create_publisher(PoseStamped, 'goal_pose', 10)
-        self.subsriber_ = self.create_subscription(PoseStamped, 'ground_truth/pose', self.pose_callback, 10)
+        self.subsriber_ = self.create_subscription(PoseStamped, 'ground_truth/pose', 
+                                                   self.pose_callback, 10)
         self.current_id = 0
         data = json.load(open('waypoints/waypoints.json'))
         waypoints = data['trajectory']
@@ -27,8 +28,8 @@ class WaypointsPublisher(Node):
         
     def transform_to_pose(self, waypoints):
         poses = []
-        scaler = 10
-        for id in range(len(waypoints)/scaler):
+        scaler = 60
+        for id in range(int(len(waypoints)/scaler)):
             pose = PoseStamped()
             pose.pose.position.x = waypoints[scaler*id][0]
             pose.pose.position.y = waypoints[scaler*id][1]
