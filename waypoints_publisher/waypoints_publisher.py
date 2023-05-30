@@ -8,11 +8,13 @@ class WaypointsPublisher(Node):
 
     def __init__(self):
         super().__init__('WaypointsPublisher')
+        self.declare_parameter('waypoints_file', 'waypoints/waypoints.json')
         self.publisher_ = self.create_publisher(PoseStamped, 'goal_pose', 10)
         self.subsriber_ = self.create_subscription(PoseStamped, 'ground_truth/pose', 
                                                    self.pose_callback, 10)
         self.current_id = 0
-        data = json.load(open('waypoints/waypoints.json'))
+        waypoints_path = self.get_parameter('waypoints_file').value
+        data = json.load(open(waypoints_path))
         waypoints = data['trajectory']
         self.poses = self.transform_to_pose(waypoints)
         self.poses_count = len(self.poses)
