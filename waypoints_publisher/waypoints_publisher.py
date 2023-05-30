@@ -22,6 +22,8 @@ class WaypointsPublisher(Node):
 
     def pose_callback(self, pose: PoseStamped):
         current_pose = self.poses[self.current_id]
+        current_pose.header.frame_id = pose.header.frame_id
+        current_pose.header.stamp = pose.header.stamp
         self.publisher_.publish(current_pose)
         
         if abs(current_pose.pose.position.x -pose.pose.position.x) < self.error_allowed and\
