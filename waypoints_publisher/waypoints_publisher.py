@@ -18,7 +18,7 @@ class WaypointsPublisher(Node):
         waypoints = data['trajectory']
         self.poses = self.transform_to_pose(waypoints)
         self.poses_count = len(self.poses)
-        self.error_allowed = 0.8
+        self.error_allowed = 1.5
 
     def pose_callback(self, pose: PoseStamped):
         current_pose = self.poses[self.current_id]
