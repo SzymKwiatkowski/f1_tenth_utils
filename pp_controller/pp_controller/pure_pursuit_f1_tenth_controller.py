@@ -141,8 +141,10 @@ class PurePursuitController(Node):
     def timer_callback(self):
         msg = AckermannControlCommand()
         msg.longitudinal.speed = 10.0
+        msg.longitudinal.acceleration = 1.0
+        msg.longitudinal.acceleration.jerk = 0.01
         self.publisher_.publish(msg)
-        self.get_logger().info('Publishing: "%f"' % msg.longitudinal.speed)
+        self.get_logger().info(f'Publishing: {msg.longitudinal.speed}')
         self.i += 1
 
 
