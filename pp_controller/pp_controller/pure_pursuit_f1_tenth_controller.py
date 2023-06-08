@@ -140,9 +140,11 @@ class PurePursuitController(Node):
 
     def timer_callback(self):
         msg = AckermannControlCommand()
-        msg.longitudinal.speed = 10.0
+        # msg.longitudinal.speed = 10.0
         msg.longitudinal.acceleration = 1.0
-        # msg.longitudinal.jerk = 0.01
+        # msg.longitudinal.jerk = 1.0
+        msg.lateral.steering_tire_angle = 0.001
+        msg.lateral.steering_tire_rotation_rate = 0.001
         self.publisher_.publish(msg)
         self.get_logger().info(f'Publishing: {msg.longitudinal.speed}')
         self.i += 1
