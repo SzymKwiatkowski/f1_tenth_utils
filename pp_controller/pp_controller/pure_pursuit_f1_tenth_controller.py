@@ -1,6 +1,9 @@
 import rclpy
 from rclpy.node import Node
-from rclpy.qos_overriding_options import QoSProfile
+from rclpy.qos import QoSDurabilityPolicy
+from rclpy.qos import QoSProfile
+from rclpy.qos import QoSLivelinessPolicy
+from rclpy.qos import QoSReliabilityPolicy
 
 import math
 import numpy as np
@@ -128,9 +131,8 @@ class PurePursuitController(Node):
     def __init__(self):
         super().__init__('pure_pursuit_f1_tenth_controller')
         options = QoSProfile()
-        options.durability = 'transient_local'
-        options.history = 'keep_last'
-        options.reliability = 'best_effort'
+        options.history = QoSDurabilityPolicy.TRANSIENT_LOCAL
+        options.reliability = QoSReliabilityPolicy.BEST_EFFORT
         self.publisher_ = self.create_publisher(AckermannControlCommand, '/control/command/control_cmd', 10, qos_profile=options)
         timer_period = 0.5  # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
