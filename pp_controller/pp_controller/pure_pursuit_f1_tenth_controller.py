@@ -129,6 +129,8 @@ class PurePursuitController(Node):
         super().__init__('pure_pursuit_f1_tenth_controller')
         options = QoSProfile()
         options.durability = 'transient_local'
+        options.history = 'keep_last'
+        options.reliability = 'best_effort'
         self.publisher_ = self.create_publisher(AckermannControlCommand, '/control/command/control_cmd', 10, qos_profile=options)
         timer_period = 0.5  # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
