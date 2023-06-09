@@ -4,27 +4,27 @@ from rclpy.qos import QoSDurabilityPolicy
 from rclpy.qos import QoSProfile
 from rclpy.qos import QoSLivelinessPolicy
 from rclpy.qos import QoSReliabilityPolicy
+from autoware_auto_control_msgs.msg import AckermannControlCommand
+from geometry_msgs.msg import PoseStamped
 
 import math
 import numpy as np
-
-from autoware_auto_control_msgs.msg import AckermannControlCommand
-
+import pandas as pd
 
 # Parameters
 k = 0.1  # look forward gain
-Lfc = 2.0  # [m] look-ahead distance
+Lfc = .35  # [m] look-ahead distance
 Kp = 1.0  # speed proportional gain
-dt = 0.1  # [s] time tick
-WB = 2.9  # [m] wheel base of vehicle
+dt = 0.01  # [s] time tick
+WB = 0.29  # [m] wheel base of vehicle
 
 class State:
-
-    def __init__(self, x=0.0, y=0.0, yaw=0.0, v=0.0):
+    def __init__(self, x=0.0, y=0.0, yaw=0.0, v=0.0, a=0.0):
         self.x = x
         self.y = y
         self.yaw = yaw
         self.v = v
+        self.a = a
         self.rear_x = self.x - ((WB / 2) * math.cos(self.yaw))
         self.rear_y = self.y - ((WB / 2) * math.sin(self.yaw))
 
@@ -33,17 +33,11 @@ class State:
         self.y += self.v * math.sin(self.yaw) * dt
         self.yaw += self.v / WB * math.tan(delta) * dt
         self.v += a * dt
-        self.rear_x = self.x - ((WB / 2) * math.cos(self.yaw))
-        self.rear_y = self.y - ((WB / 2) * math.sin(self.yaw))
-
-    def calc_distance(self, point_x, point_y):
-        dx = self.rear_x - point_x
-        dy = self.rear_y - point_y
-        return math.hypot(dx, dy)
-
+    
+    def calc_distance(self, x, y):
+        return math.sqrt((self.x-x)**2 + (self.y-y)**2)
 
 class States:
-
     def __init__(self):
         self.x = []
         self.y = []
@@ -58,85 +52,91 @@ class States:
         self.v.append(state.v)
         self.t.append(t)
 
-
-def proportional_control(target, current):
-    a = Kp * (target - current)
-
-    return a
-
-
-class TargetCourse:
+class TargetPath:
 
     def __init__(self, cx, cy):
-        self.cx = cx
-        self.cy = cy
-        self.old_nearest_point_index = None
+        self.states = [State(el, cy[idx]) for idx, el in enumerate(cx)]
+        self.count = len(cx)
+        
+    def next_idx(self, current_idx):
+        if current_idx+1 >= self.count:
+            return 0
+        
+        return current_idx+1
 
-    def search_target_index(self, state):
-
-        # To speed up nearest point search, doing it at only first time.
-        if self.old_nearest_point_index is None:
-            # search nearest point index
-            dx = [state.rear_x - icx for icx in self.cx]
-            dy = [state.rear_y - icy for icy in self.cy]
-            d = np.hypot(dx, dy)
-            ind = np.argmin(d)
-            self.old_nearest_point_index = ind
-        else:
-            ind = self.old_nearest_point_index
-            distance_this_index = state.calc_distance(self.cx[ind],
-                                                      self.cy[ind])
-            while True:
-                distance_next_index = state.calc_distance(self.cx[ind + 1],
-                                                          self.cy[ind + 1])
-                if distance_this_index < distance_next_index:
-                    break
-                ind = ind + 1 if (ind + 1) < len(self.cx) else ind
-                distance_this_index = distance_next_index
-            self.old_nearest_point_index = ind
-
-        Lf = k * state.v + Lfc  # update look ahead distance
-
-        # search look ahead target point index
-        while Lf > state.calc_distance(self.cx[ind], self.cy[ind]):
-            if (ind + 1) >= len(self.cx):
-                break  # not exceed goal
-            ind += 1
-
-        return ind, Lf
-
-
-def pure_pursuit_steer_control(state, trajectory, pind):
-    ind, Lf = trajectory.search_target_index(state)
-
-    if pind >= ind:
-        ind = pind
-
-    if ind < len(trajectory.cx):
-        tx = trajectory.cx[ind]
-        ty = trajectory.cy[ind]
-    else:  # toward goal
-        tx = trajectory.cx[-1]
-        ty = trajectory.cy[-1]
-        ind = len(trajectory.cx) - 1
-
-    alpha = math.atan2(ty - state.rear_y, tx - state.rear_x) - state.yaw
-
-    delta = math.atan2(2.0 * WB * math.sin(alpha) / Lf, 1.0)
-
-    return delta, ind
+def yaw_from_quaternion(q):
+    return np.arctan2(2.0*(q[0]*q[2] + q[3]*q[0]), q[3]*q[3] - q[0]*q[0] - q[1]*q[1] + q[2]*q[2])
 
 class PurePursuitController(Node):
 
     def __init__(self):
         super().__init__('pure_pursuit_f1_tenth_controller')
+        
         options = QoSProfile(depth=1)
         options.durability = QoSDurabilityPolicy.TRANSIENT_LOCAL
         options.reliability = QoSReliabilityPolicy.RELIABLE
         self.publisher_ = self.create_publisher(AckermannControlCommand, '/control/command/control_cmd', qos_profile=options)
-        timer_period = 0.5  # seconds
-        self.timer = self.create_timer(timer_period, self.timer_callback)
-        self.i = 0
+        
+        self.declare_parameter('waypoints_file', 'config/waypoints.csv')
+        waypoints_file = self.get_parameter('waypoints_file').get_parameter_value().string_value
+        df_waypoints = pd.read_csv(waypoints_file)
+        self.thresh_err = 0.1
+        initial_state = [2.28139033424668e-05,
+                         -6.034809985067113e-07,
+                         -6.034809985067113e-07,
+                         3.259629011154175e-09,
+                         4.117931530345231e-05,
+                         -9.948154911398888e-06,
+                         1.0]
+        self.time_nanosecs = self.get_clock().now().nanoseconds
+        self.state = State(x=initial_state[0], y=initial_state[1], yaw=yaw_from_quaternion(initial_state[3:]), v=0.0)
+        x_r = df_waypoints['pose.x'].to_numpy()
+        y_r = df_waypoints['pose.y'].to_numpy()
+                
+        self.target_speed = 0.2 # [units/s]
+        
+        self.target_path = TargetPath(x_r, y_r)
+        self.target_idx = 0
+
+        self.pose_subscription_ = self.create_subscription(PoseStamped, 'ground_truth/pose', 
+                                                           self.pure_pursuite_controll, 10)
+        
+    def pure_pursuite_controll(self, pose: PoseStamped):
+        pose = [pose.pose.position.x, 
+                 pose.pose.position.y,
+                 pose.pose.position.z, 
+                 pose.pose.orientation.x,
+                 pose.pose.orientation.y, 
+                 pose.pose.orientation.z, 
+                 pose.pose.orientation.w]
+        
+        err = self.target_path.states[self.target_idx].calc_distance(pose[0], pose[1])
+        while err < self.thresh_err:
+            self.target_idx = self.target_path.next_idx(self.target_idx)
+            err = self.target_path.states[self.target_idx].calc_distance(pose[0], pose[1])
+            
+        dt = (self.time_nanosecs - pose.header.stamp.nanosec) * 0.1**9
+        dst = self.state.calc_distance(pose[0], pose[1])
+        vel = dst*dt
+        current_state = State(x=pose[0], y=pose[1], yaw=yaw_from_quaternion(pose[3:]), v=vel)
+        ai = self.proportional_control(current_state.v)
+        di = self.pure_pursuit_steer_control(current_state, dst)
+        
+        self.publish_control(di, ai)
+        
+    def proportional_control(self, current):
+        a = Kp * (self.target_speed - current)
+
+        return a
+
+    def pure_pursuit_steer_control(self, state: State, Lf):
+        target_state = self.target_path.states[self.target_idx]
+
+        alpha = math.atan2(target_state.y - state.rear_y, target_state.x - state.rear_x) - state.yaw
+
+        delta = math.atan2(2.0 * WB * math.sin(alpha) / Lf, 1.0)
+
+        return delta
 
     def timer_callback(self):
         msg = AckermannControlCommand()
@@ -148,7 +148,12 @@ class PurePursuitController(Node):
         self.publisher_.publish(msg)
         self.get_logger().info(f'Publishing: {msg.longitudinal.speed}')
         self.i += 1
-
+    
+    def publish_control(self, steer, accel):
+        acc_msg = AckermannControlCommand()
+        acc_msg.lateral.steering_tire_angle = steer
+        acc_msg.longitudinal.acceleration = accel
+        self.control_publisher.publish(acc_msg)
 
 def main(args=None):
     rclpy.init(args=args)
