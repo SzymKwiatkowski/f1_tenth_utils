@@ -93,7 +93,7 @@ class PurePursuitController(Node):
         x_r = df_waypoints['pose.x'].to_numpy()
         y_r = df_waypoints['pose.y'].to_numpy()
                 
-        self.target_speed = 0.14 # [units/s]
+        self.target_speed = 0.35 # [units/s]
         
         self.target_path = TargetPath(x_r, y_r)
         self.target_idx = 0
@@ -110,16 +110,16 @@ class PurePursuitController(Node):
                  pose.pose.orientation.z, 
                  pose.pose.orientation.w]
         
-        err = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1])
-        while err+Lfc < self.thresh_err:
-            self.target_idx = self.target_path.next_idx(self.target_idx)
+        err = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1]) + Lfc
+        while err < self.thresh_err:
+            self.target_idx = self.target_path.next_idx(self.target_idx) + Lfc
             err = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1])
             
         dst = err
         current_state = State(x=pose_l[0], y=pose_l[1], yaw=yaw_from_quaternion(pose_l[3:]), v=self.state.v)
         ai = self.proportional_control()
         di = self.pure_pursuit_steer_control(current_state, dst)
-        ai = np.clip(ai, 0.0, 2.0)
+        # ai = np.clip(ai, 0.0, 2.0)
         self.state.a = ai
         
         self.state.update(ai, di)
@@ -161,6 +161,7 @@ class PurePursuitController(Node):
         acc_msg.longitudinal.acceleration = accel
         self.publisher_.publish(acc_msg)
         self.get_logger().info(f'Published acc: {accel} and steer: {steer}')
+        
 
 def main(args=None):
     rclpy.init(args=args)
