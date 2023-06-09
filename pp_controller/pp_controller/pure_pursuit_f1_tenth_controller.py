@@ -12,11 +12,11 @@ import numpy as np
 import pandas as pd
 
 # Parameters
-k = 0.1  # look forward gain
-Lfc = 3.35  # [m] look-ahead distance
+k = 0.3  # look forward gain
+Lfc = 0.15  # [m] look-ahead distance
 Kp = 1.0  # speed proportional gain
 dt = 0.04  # [s] time tick
-WB = 0.29  # [m] wheel base of vehicle
+WB = 0.035  # [m] wheel base of vehicle
 
 class State:
     def __init__(self, x=0.0, y=0.0, yaw=0.0, v=0.0, a=0.0):
@@ -111,7 +111,8 @@ class PurePursuitController(Node):
                  pose.pose.orientation.w]
         
         dst = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1])
-        while dst < Lfc:
+        Lf = Lfc + k * self.state.v
+        while dst < Lf:
             self.target_idx = self.target_path.next_idx(self.target_idx)
             dst = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1])
             self.get_logger().info(f"err: {dst}")
