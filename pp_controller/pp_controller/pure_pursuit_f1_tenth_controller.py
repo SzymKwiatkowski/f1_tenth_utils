@@ -15,7 +15,7 @@ import pandas as pd
 k = 0.1  # look forward gain
 Lfc = .35  # [m] look-ahead distance
 Kp = 1.0  # speed proportional gain
-dt = 0.01  # [s] time tick
+dt = 0.04  # [s] time tick
 WB = 0.29  # [m] wheel base of vehicle
 
 class State:
@@ -93,16 +93,16 @@ class PurePursuitController(Node):
         x_r = df_waypoints['pose.x'].to_numpy()
         y_r = df_waypoints['pose.y'].to_numpy()
                 
-        self.target_speed = 0.2 # [units/s]
+        self.target_speed = 0.14 # [units/s]
         
         self.target_path = TargetPath(x_r, y_r)
         self.target_idx = 0
 
-        self.pose_subscription_ = self.create_subscription(PoseStamped, 'ground_truth/pose', 
+        self.pose_subscription_ = self.create_subscription(PoseStamped, '/ground_truth/pose', 
                                                            self.pure_pursuite_controll, 10)
         
     def pure_pursuite_controll(self, pose: PoseStamped):
-        pose = [pose.pose.position.x, 
+        pose_l = [pose.pose.position.x, 
                  pose.pose.position.y,
                  pose.pose.position.z, 
                  pose.pose.orientation.x,
@@ -110,26 +110,32 @@ class PurePursuitController(Node):
                  pose.pose.orientation.z, 
                  pose.pose.orientation.w]
         
-        err = self.target_path.states[self.target_idx].calc_distance(pose[0], pose[1])
-        while err < self.thresh_err:
+        err = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1])
+        while err+Lfc < self.thresh_err:
             self.target_idx = self.target_path.next_idx(self.target_idx)
-            err = self.target_path.states[self.target_idx].calc_distance(pose[0], pose[1])
+            err = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1])
             
-        dt = (self.time_nanosecs - pose.header.stamp.nanosec) * 0.1**9
-        dst = self.state.calc_distance(pose[0], pose[1])
-        vel = dst*dt
-        current_state = State(x=pose[0], y=pose[1], yaw=yaw_from_quaternion(pose[3:]), v=vel)
-        ai = self.proportional_control(current_state.v)
+        dst = err
+        current_state = State(x=pose_l[0], y=pose_l[1], yaw=yaw_from_quaternion(pose_l[3:]), v=self.state.v)
+        ai = self.proportional_control()
         di = self.pure_pursuit_steer_control(current_state, dst)
+        ai = np.clip(ai, 0.0, 2.0)
+        self.state.a = ai
+        
+        self.state.update(ai, di)
         
         self.publish_control(di, ai)
         
-    def proportional_control(self, current):
-        a = Kp * (self.target_speed - current)
+    def proportional_control(self):
+        a = Kp * (self.target_speed - self.state.v)
 
         return a
 
     def pure_pursuit_steer_control(self, state: State, Lf):
+        
+        if Lf == 0:
+            return 0.0
+        
         target_state = self.target_path.states[self.target_idx]
 
         alpha = math.atan2(target_state.y - state.rear_y, target_state.x - state.rear_x) - state.yaw
@@ -153,7 +159,8 @@ class PurePursuitController(Node):
         acc_msg = AckermannControlCommand()
         acc_msg.lateral.steering_tire_angle = steer
         acc_msg.longitudinal.acceleration = accel
-        self.control_publisher.publish(acc_msg)
+        self.publisher_.publish(acc_msg)
+        self.get_logger().info(f'Published acc: {accel} and steer: {steer}')
 
 def main(args=None):
     rclpy.init(args=args)
