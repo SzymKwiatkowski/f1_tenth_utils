@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 # Parameters
-k = 0.3  # look forward gain
+k = 0.1  # look forward gain
 Lfc = 0.15  # [m] look-ahead distance
 Kp = 1.0  # speed proportional gain
 dt = 0.04  # [s] time tick
@@ -93,7 +93,7 @@ class PurePursuitController(Node):
         x_r = df_waypoints['pose.x'].to_numpy()
         y_r = df_waypoints['pose.y'].to_numpy()
                 
-        self.target_speed = 0.35 # [units/s]
+        self.target_speed = 2.0 # [units/s]
         
         self.target_path = TargetPath(x_r, y_r)
         self.target_idx = 28
