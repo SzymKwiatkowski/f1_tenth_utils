@@ -13,7 +13,7 @@ import pandas as pd
 
 # Parameters
 k = 0.1  # look forward gain
-Lfc = .35  # [m] look-ahead distance
+Lfc = 3.35  # [m] look-ahead distance
 Kp = 1.0  # speed proportional gain
 dt = 0.04  # [s] time tick
 WB = 0.29  # [m] wheel base of vehicle
@@ -96,7 +96,7 @@ class PurePursuitController(Node):
         self.target_speed = 0.35 # [units/s]
         
         self.target_path = TargetPath(x_r, y_r)
-        self.target_idx = 0
+        self.target_idx = 28
 
         self.pose_subscription_ = self.create_subscription(PoseStamped, '/ground_truth/pose', 
                                                            self.pure_pursuite_controll, 10)
@@ -110,12 +110,12 @@ class PurePursuitController(Node):
                  pose.pose.orientation.z, 
                  pose.pose.orientation.w]
         
-        err = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1]) + Lfc
-        while err < self.thresh_err:
-            self.target_idx = self.target_path.next_idx(self.target_idx) + Lfc
-            err = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1])
-            
-        dst = err
+        dst = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1])
+        while dst < Lfc:
+            self.target_idx = self.target_path.next_idx(self.target_idx)
+            dst = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1])
+            self.get_logger().info(f"err: {dst}")
+
         current_state = State(x=pose_l[0], y=pose_l[1], yaw=yaw_from_quaternion(pose_l[3:]), v=self.state.v)
         ai = self.proportional_control()
         di = self.pure_pursuit_steer_control(current_state, dst)
