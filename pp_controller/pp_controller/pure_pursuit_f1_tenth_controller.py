@@ -12,8 +12,6 @@ import numpy as np
 import pandas as pd
 
 # Parameters
-k = 0.1  # look forward gain
-Lfc = 0.15  # [m] look-ahead distance
 Kp = 1.0  # speed proportional gain
 dt = 0.04  # [s] time tick
 WB = 0.035  # [m] wheel base of vehicle
@@ -52,18 +50,6 @@ class States:
         self.v.append(state.v)
         self.t.append(t)
 
-class TargetPath:
-
-    def __init__(self, cx, cy):
-        self.states = [State(el, cy[idx]) for idx, el in enumerate(cx)]
-        self.count = len(cx)
-        
-    def next_idx(self, current_idx):
-        if current_idx+1 >= self.count:
-            return 0
-        
-        return current_idx+1
-
 def yaw_from_quaternion(q):
     return np.arctan2(2.0*(q[0]*q[2] + q[3]*q[0]), q[3]*q[3] - q[0]*q[0] - q[1]*q[1] + q[2]*q[2])
 
@@ -77,31 +63,18 @@ class PurePursuitController(Node):
         options.reliability = QoSReliabilityPolicy.RELIABLE
         self.publisher_ = self.create_publisher(AckermannControlCommand, '/control/command/control_cmd', qos_profile=options)
         
-        self.declare_parameter('waypoints_file', 'config/waypoints.csv')
-        waypoints_file = self.get_parameter('waypoints_file').get_parameter_value().string_value
-        df_waypoints = pd.read_csv(waypoints_file)
-        self.thresh_err = 0.1
-        initial_state = [2.28139033424668e-05,
-                         -6.034809985067113e-07,
-                         -6.034809985067113e-07,
-                         3.259629011154175e-09,
-                         4.117931530345231e-05,
-                         -9.948154911398888e-06,
-                         1.0]
         self.time_nanosecs = self.get_clock().now().nanoseconds
-        self.state = State(x=initial_state[0], y=initial_state[1], yaw=yaw_from_quaternion(initial_state[3:]), v=0.0)
-        x_r = df_waypoints['pose.x'].to_numpy()
-        y_r = df_waypoints['pose.y'].to_numpy()
+        self.state = State(x=0, y=0, yaw=yaw_from_quaternion([0.0,0.0,0.0,0.0]), v=0.0)
                 
         self.target_speed = 2.0 # [units/s]
         
-        self.target_path = TargetPath(x_r, y_r)
-        self.target_idx = 28
-
         self.pose_subscription_ = self.create_subscription(PoseStamped, '/ground_truth/pose', 
-                                                           self.pure_pursuite_controll, 10)
+                                                           self.update_position, 10)
         
-    def pure_pursuite_controll(self, pose: PoseStamped):
+        self.pose_subscription_ = self.create_subscription(PoseStamped, '/goal_pose', 
+                                                           self.control_to_goal, 10)
+        
+    def update_position(self, pose: PoseStamped):
         pose_l = [pose.pose.position.x, 
                  pose.pose.position.y,
                  pose.pose.position.z, 
@@ -109,52 +82,25 @@ class PurePursuitController(Node):
                  pose.pose.orientation.y, 
                  pose.pose.orientation.z, 
                  pose.pose.orientation.w]
-        
-        dst = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1])
-        Lf = Lfc + k * self.state.v
-        while dst < Lf:
-            self.target_idx = self.target_path.next_idx(self.target_idx)
-            dst = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1])
-            self.get_logger().info(f"err: {dst}")
 
-        current_state = State(x=pose_l[0], y=pose_l[1], yaw=yaw_from_quaternion(pose_l[3:]), v=self.state.v)
-        ai = self.proportional_control()
-        di = self.pure_pursuit_steer_control(current_state, dst)
-        # ai = np.clip(ai, 0.0, 2.0)
-        self.state.a = ai
-        
-        self.state.update(ai, di)
-        
-        self.publish_control(di, ai)
+        self.state = State(x=pose_l[0], y=pose_l[1], yaw=yaw_from_quaternion(pose_l[3:]), v=self.state.v)
         
     def proportional_control(self):
         a = Kp * (self.target_speed - self.state.v)
 
         return a
 
-    def pure_pursuit_steer_control(self, state: State, Lf):
+    def pure_pursuit_steer_control(self, target_state: State, Lf):
         
         if Lf == 0:
             return 0.0
         
-        target_state = self.target_path.states[self.target_idx]
 
-        alpha = math.atan2(target_state.y - state.rear_y, target_state.x - state.rear_x) - state.yaw
+        alpha = math.atan2(target_state.y - self.state.rear_y, target_state.x - self.state.rear_x) - self.state.yaw
 
         delta = math.atan2(2.0 * WB * math.sin(alpha) / Lf, 1.0)
 
         return delta
-
-    def timer_callback(self):
-        msg = AckermannControlCommand()
-        # msg.longitudinal.speed = 10.0
-        msg.longitudinal.acceleration = 1.0
-        # msg.longitudinal.jerk = 1.0
-        msg.lateral.steering_tire_angle = 0.001
-        msg.lateral.steering_tire_rotation_rate = 0.001
-        self.publisher_.publish(msg)
-        self.get_logger().info(f'Publishing: {msg.longitudinal.speed}')
-        self.i += 1
     
     def publish_control(self, steer, accel):
         acc_msg = AckermannControlCommand()
@@ -162,6 +108,23 @@ class PurePursuitController(Node):
         acc_msg.longitudinal.acceleration = accel
         self.publisher_.publish(acc_msg)
         self.get_logger().info(f'Published acc: {accel} and steer: {steer}')
+    
+    def control_to_goal(self, pose: PoseStamped):
+        target_state = State(x=pose.pose.position.x,
+                             y=pose.pose.position.y,
+                             yaw=yaw_from_quaternion([pose.pose.orientation.x,
+                                                      pose.pose.orientation.y,
+                                                      pose.pose.orientation.z,
+                                                      pose.pose.orientation.w]))
+        dst = target_state.calc_distance(self.state.x, self.state.y)
+        ai = self.proportional_control()
+        di = self.pure_pursuit_steer_control(self.state, dst)
+        
+        self.state.a = ai
+        
+        self.state.update(ai, di)
+        
+        self.publish_control(di, ai)
         
 
 def main(args=None):
