@@ -132,7 +132,7 @@ class PurePursuitController(Node):
         self.state = current_state
         ai = self.proportional_control()
         di = self.pure_pursuit_steer_control(current_state, dst)
-        ai = np.clip(ai, 0.01, 2.0)
+        ai = np.clip(ai, 0.001, 2.0)
         self.state.a = ai
         
         self.state.update(ai, di)
