@@ -9,14 +9,17 @@ def generate_launch_description():
         Node(
             package='pp_controller',
             namespace='pp_controller',
-            executable='pure_pursuit_f1_tenth_controller'
-        ),
-        Node(
-            package='waypoints_publisher',
-            namespace='waypoints_publisher',
-            executable='waypoints_publisher',
+            executable='pure_pursuit_f1_tenth_controller',
             parameters=[{
-            'waypoints_file': waypoints_file_json
+            'waypoints_file': waypoints_file_csv
             }],
-        )
+        ),
+        # Node(
+        #     package='waypoints_publisher',
+        #     namespace='waypoints_publisher',
+        #     executable='waypoints_publisher',
+        #     parameters=[{
+        #     'waypoints_file': waypoints_file_json
+        #     }],
+        # )
     ])
