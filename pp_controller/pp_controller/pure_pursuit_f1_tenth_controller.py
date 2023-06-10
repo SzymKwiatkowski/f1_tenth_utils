@@ -93,7 +93,7 @@ class PurePursuitController(Node):
         x_r = df_waypoints['pose.x'].to_numpy()
         y_r = df_waypoints['pose.y'].to_numpy()
                 
-        self.target_speed = 2.0 # [units/s]
+        self.target_speed = 3.5 # [units/s]
         
         self.target_path = TargetPath(x_r, y_r)
         self.target_idx = 28
@@ -132,7 +132,7 @@ class PurePursuitController(Node):
         self.state = current_state
         ai = self.proportional_control()
         di = self.pure_pursuit_steer_control(current_state, dst)
-        ai = np.clip(ai, 0.001, 2.0)
+        ai = np.clip(ai, 0.005, 2.0)
         self.state.a = ai
         
         self.state.update(ai, di)
