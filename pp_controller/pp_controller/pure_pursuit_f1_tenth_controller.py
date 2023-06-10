@@ -12,11 +12,11 @@ import numpy as np
 import pandas as pd
 
 # Parameters
-k = 0.3  # look forward gain
-Lfc = 0.15  # [m] look-ahead distance
+k = 0.1  # look forward gain
+Lfc = 0.75  # [m] look-ahead distance
 Kp = 1.0  # speed proportional gain
 dt = 0.04  # [s] time tick
-WB = 0.035  # [m] wheel base of vehicle
+WB = 0.28  # [m] wheel base of vehicle
 
 class State:
     def __init__(self, x=0.0, y=0.0, yaw=0.0, v=0.0, a=0.0):
@@ -93,10 +93,11 @@ class PurePursuitController(Node):
         x_r = df_waypoints['pose.x'].to_numpy()
         y_r = df_waypoints['pose.y'].to_numpy()
                 
-        self.target_speed = 0.35 # [units/s]
+        self.target_speed = 2.0 # [units/s]
         
         self.target_path = TargetPath(x_r, y_r)
         self.target_idx = 28
+        self.search_target_samples = 10
 
         self.pose_subscription_ = self.create_subscription(PoseStamped, '/ground_truth/pose', 
                                                            self.pure_pursuite_controll, 10)
@@ -110,12 +111,22 @@ class PurePursuitController(Node):
                  pose.pose.orientation.z, 
                  pose.pose.orientation.w]
         
+        
         dst = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1])
         Lf = Lfc + k * self.state.v
         while dst < Lf:
             self.target_idx = self.target_path.next_idx(self.target_idx)
             dst = self.target_path.states[self.target_idx].calc_distance(pose_l[0], pose_l[1])
             self.get_logger().info(f"err: {dst}")
+        
+        # rank_target = []
+        # for idx in range(int(-self.search_target_samples/2), int(self.search_target_samples/2)):
+        #     n_target = self.target_idx + idx
+        #     if n_target < 0:
+        #         n_target = self.target_path.count + n_target
+        #     n_target = n_target % self.target_path.count
+        #     dst = self.target_path.states[n_target].calc_distance(pose_l[0], pose_l[1])
+        # rank_target
 
         current_state = State(x=pose_l[0], y=pose_l[1], yaw=yaw_from_quaternion(pose_l[3:]), v=self.state.v)
         self.state = current_state
@@ -150,6 +161,7 @@ class PurePursuitController(Node):
         acc_msg = AckermannControlCommand()
         acc_msg.lateral.steering_tire_angle = steer
         acc_msg.longitudinal.acceleration = accel
+        acc_msg.longitudinal.speed = self.target_speed
         self.publisher_.publish(acc_msg)
         self.get_logger().info(f'Published acc: {accel} and steer: {steer}')
         
