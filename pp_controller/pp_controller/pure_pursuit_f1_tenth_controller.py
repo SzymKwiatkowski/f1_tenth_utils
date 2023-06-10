@@ -65,7 +65,7 @@ class TargetPath:
         return current_idx+1
 
 def yaw_from_quaternion(q):
-    return np.arctan2(2.0*(q[0]*q[2] + q[3]*q[0]), q[3]*q[3] - q[0]*q[0] - q[1]*q[1] + q[2]*q[2])
+    return np.arctan2(2.0*(q[0]*q[1] + q[3]*q[2]), q[3]**2 + q[0]**2 - q[1]**2 - q[2]**2)
 
 class PurePursuitController(Node):
 
