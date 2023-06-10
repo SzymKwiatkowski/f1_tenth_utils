@@ -14,7 +14,7 @@ import pandas as pd
 # Parameters
 Kp = 1.0  # speed proportional gain
 dt = 0.04  # [s] time tick
-WB = 0.035  # [m] wheel base of vehicle
+WB = 0.33  # [m] wheel base of vehicle
 
 class State:
     def __init__(self, x=0.0, y=0.0, yaw=0.0, v=0.0, a=0.0):
@@ -66,7 +66,7 @@ class PurePursuitController(Node):
         self.time_nanosecs = self.get_clock().now().nanoseconds
         self.state = State(x=0, y=0, yaw=yaw_from_quaternion([0.0,0.0,0.0,0.0]), v=0.0)
                 
-        self.target_speed = 2.0 # [units/s]
+        self.target_speed = 1.0 # [units/s]
         
         self.pose_subscription_ = self.create_subscription(PoseStamped, '/ground_truth/pose', 
                                                            self.update_position, 10)
@@ -94,11 +94,10 @@ class PurePursuitController(Node):
         
         if Lf == 0:
             return 0.0
-        
-
+    
         alpha = math.atan2(target_state.y - self.state.rear_y, target_state.x - self.state.rear_x) - self.state.yaw
 
-        delta = math.atan2(2.0 * WB * math.sin(alpha) / Lf, 1.0)
+        delta = math.atan2(2.0 * WB * math.sin(alpha), Lf)
 
         return delta
     
@@ -106,6 +105,7 @@ class PurePursuitController(Node):
         acc_msg = AckermannControlCommand()
         acc_msg.lateral.steering_tire_angle = steer
         acc_msg.longitudinal.acceleration = accel
+        acc_msg.longitudinal.speed = self.target_speed
         self.publisher_.publish(acc_msg)
         self.get_logger().info(f'Published acc: {accel} and steer: {steer}')
     
@@ -121,8 +121,9 @@ class PurePursuitController(Node):
         di = self.pure_pursuit_steer_control(self.state, dst)
         
         self.state.a = ai
+        theta = self.state.yaw + di
         
-        self.state.update(ai, di)
+        self.state.update(ai, theta)
         
         self.publish_control(di, ai)
         
